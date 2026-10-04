@@ -358,7 +358,7 @@ class GardenGameView(context: Context) : View(context) {
             val cx = cellCenterX(p.col); val cy = cellCenterY(p.row)
             uiPaint.color = Color.argb(75, 22, 54, 25)
             c.drawOval(X(cx - 27f), Y(cy + 25f), X(cx + 27f), Y(cy + 37f), uiPaint)
-            drawPlantIcon(c, cx, cy + kotlin.math.sin(timeAlive * 2.3 + p.row + p.col) * 3f, p.type)
+            drawPlantIcon(c, cx, cy + (kotlin.math.sin(timeAlive * 2.3 + p.row + p.col) * 3.0).toFloat(), p.type)
             uiPaint.color = Color.argb(180, 20, 45, 23)
             c.drawRoundRect(X(cx - 28f), Y(cy - 38f), X(cx + 28f), Y(cy - 31f), X(4f), X(4f), uiPaint)
             uiPaint.color = Color.rgb(104, 221, 119)

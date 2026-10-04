@@ -11,6 +11,8 @@ import kotlin.math.min
 import kotlin.random.Random
 
 class GardenGameView(context: Context) : View(context) {
+    private enum class Screen { HOME, MODE_SELECT, BATTLE, PAUSE, RESULT, COLLECTION, SETTINGS }
+
     private enum class PlantType(val cost: Int, val color: Int, val accent: Int, val title: String) {
         SUN_BLOOM(75, Color.rgb(255, 211, 78), Color.rgb(255, 243, 171), "Sun Bloom"),
         PEA_POD(100, Color.rgb(89, 188, 89), Color.rgb(190, 244, 123), "Pea Pod"),
@@ -60,6 +62,13 @@ class GardenGameView(context: Context) : View(context) {
     private var lives = 3
     private var selected = PlantType.PEA_POD
     private var gameOver = false
+    private var victory = false
+    private var screen = Screen.HOME
+    private var selectedMode = "ADVENTURE"
+    private var sfxEnabled = true
+    private var musicEnabled = true
+    private var vibrationEnabled = true
+    private var highGraphics = true
     private var victoryFlash = 0f
     private val rand = Random(77)
 
@@ -88,7 +97,7 @@ class GardenGameView(context: Context) : View(context) {
     }
 
     private fun update(dt: Float) {
-        if (gameOver) return
+        if (screen != Screen.BATTLE || gameOver) return
         timeAlive += dt
         spawnTimer += dt
         victoryFlash = max(0f, victoryFlash - dt)
@@ -144,14 +153,14 @@ class GardenGameView(context: Context) : View(context) {
 
         val deadEnemies = enemies.filter { it.hp <= 0f }
         deadEnemies.forEach { enemy ->
-            score += if (enemy.type == 1) 45 else 25
-            suns += if (enemy.type == 1) 15 else 10
+            score += when (enemy.type) { 1 -> 45; 2 -> 35; else -> 25 }
+            suns += when (enemy.type) { 1 -> 15; 2 -> 12; else -> 10 }
             if (score / 250 > crowns) {
                 crowns = score / 250
                 victoryFlash = 0.8f
                 popText(1040f, 82f, "CROWN +1", Color.rgb(255, 225, 110))
             }
-            repeat(10) { sparkleAt(enemy.x, cellCenterY(enemy.row), if (enemy.type == 1) Color.rgb(196, 120, 70) else Color.rgb(125, 214, 103)) }
+            repeat(10) { sparkleAt(enemy.x, cellCenterY(enemy.row), when (enemy.type) { 1 -> Color.rgb(196, 120, 70); 2 -> Color.rgb(210, 90, 150); else -> Color.rgb(125, 214, 103) }) }
         }
         enemies.removeAll(deadEnemies.toSet())
 
@@ -163,7 +172,7 @@ class GardenGameView(context: Context) : View(context) {
                 enemy.x -= enemy.speed * dt
             } else if (enemy.attackTimer > 0.55f) {
                 enemy.attackTimer = 0f
-                blocker.hp -= if (enemy.type == 1) 13f else 9f
+                blocker.hp -= when (enemy.type) { 1 -> 13f; 2 -> 7f; else -> 9f }
                 repeat(3) { sparkleAt(cellCenterX(blocker.col), cellCenterY(blocker.row), Color.rgb(250, 180, 105)) }
             }
         }
@@ -177,7 +186,8 @@ class GardenGameView(context: Context) : View(context) {
             repeat(10) { sparkleAt(110f, cellCenterY(enemy.row), Color.rgb(255, 224, 95)) }
         }
         enemies.removeAll { it.x < 100f }
-        if (lives <= 0) gameOver = true
+        if (lives <= 0) { gameOver = true; victory = false; screen = Screen.RESULT }
+        if (timeAlive >= 60f && !gameOver) { gameOver = true; victory = true; screen = Screen.RESULT }
 
         particles.forEach {
             it.x += it.vx * dt
@@ -191,10 +201,11 @@ class GardenGameView(context: Context) : View(context) {
     }
 
     private fun spawnEnemy() {
-        val type = if (timeAlive > 25f && rand.nextFloat() < 0.18f) 1 else 0
+        val roll = rand.nextFloat()
+        val type = if (timeAlive > 30f && roll < 0.14f) 2 else if (timeAlive > 25f && roll < 0.32f) 1 else 0
         val row = rand.nextInt(rows)
-        val hp = if (type == 1) 170f else 80f
-        val speed = if (type == 1) 29f else 38f
+        val hp = when (type) { 1 -> 170f; 2 -> 55f; else -> 80f }
+        val speed = when (type) { 1 -> 29f; 2 -> 64f; else -> 38f }
         enemies += Enemy(row, 1110f, type, hp, hp, speed)
     }
 
@@ -215,20 +226,139 @@ class GardenGameView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawColor(Color.rgb(12, 34, 22))
-        drawBackground(canvas)
-        drawTopBar(canvas)
-        drawBoard(canvas)
-        drawPlants(canvas)
-        drawEnemies(canvas)
-        drawBullets(canvas)
-        drawParticles(canvas)
-        drawPlantBar(canvas)
-        drawFloatTexts(canvas)
-        if (victoryFlash > 0f) {
-            uiPaint.color = Color.argb((victoryFlash * 80).toInt(), 255, 222, 120)
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), uiPaint)
+        when (screen) {
+            Screen.HOME -> drawHome(canvas)
+            Screen.MODE_SELECT -> drawModeSelect(canvas)
+            Screen.BATTLE -> {
+                drawBackground(canvas)
+                drawTopBar(canvas)
+                drawBoard(canvas)
+                drawPlants(canvas)
+                drawEnemies(canvas)
+                drawBullets(canvas)
+                drawParticles(canvas)
+                drawPlantBar(canvas)
+                drawFloatTexts(canvas)
+                if (victoryFlash > 0f) {
+                    uiPaint.color = Color.argb((victoryFlash * 80).toInt(), 255, 222, 120)
+                    canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), uiPaint)
+                }
+            }
+            Screen.PAUSE -> { drawBattleScene(canvas); drawPause(canvas) }
+            Screen.RESULT -> { drawBattleScene(canvas); drawResult(canvas) }
+            Screen.COLLECTION -> drawCollection(canvas)
+            Screen.SETTINGS -> drawSettings(canvas)
         }
-        if (gameOver) drawGameOver(canvas)
+    }
+
+    private fun panel(c: Canvas, l: Float, t: Float, r: Float, b: Float, color: Int = Color.argb(235, 13, 36, 23)) {
+        uiPaint.color = color
+        c.drawRoundRect(X(l), Y(t), X(r), Y(b), X(28f), X(28f), uiPaint)
+    }
+
+    private fun button(c: Canvas, x: Float, y: Float, w: Float, h: Float, label: String, enabled: Boolean = true) {
+        uiPaint.color = if (enabled) Color.rgb(229, 190, 72) else Color.rgb(80, 91, 78)
+        c.drawRoundRect(X(x), Y(y), X(x+w), Y(y+h), X(18f), X(18f), uiPaint)
+        textPaint.color = if (enabled) Color.rgb(48, 38, 18) else Color.rgb(190, 196, 187)
+        textPaint.textSize = X(23f)
+        c.drawText(label, X(x + 26f), Y(y + h*0.65f), textPaint)
+    }
+
+    private fun title(c: Canvas, main: String, sub: String) {
+        textPaint.color = Color.WHITE; textPaint.textSize = X(58f)
+        c.drawText(main, X(70f), Y(110f), textPaint)
+        normalTextPaint.color = Color.rgb(198, 224, 196); normalTextPaint.textSize = X(22f)
+        c.drawText(sub, X(74f), Y(145f), normalTextPaint)
+    }
+
+    private fun drawHome(c: Canvas) {
+        drawBackground(c)
+        panel(c, 55f, 42f, 1225f, 678f, Color.argb(205, 8, 28, 18))
+        title(c, "GARDEN CLASH", "Grow your garden. Hold the line. Earn Crowns.")
+        button(c, 80f, 195f, 300f, 68f, "PLAY")
+        button(c, 80f, 285f, 300f, 68f, "PLANTS")
+        button(c, 80f, 375f, 300f, 68f, "ENEMIES")
+        button(c, 80f, 465f, 300f, 68f, "SETTINGS")
+        button(c, 410f, 195f, 300f, 68f, "ARENA")
+        button(c, 410f, 285f, 300f, 68f, "CHALLENGE", false)
+        button(c, 410f, 375f, 300f, 68f, "ENDLESS", false)
+        normalTextPaint.color = Color.rgb(235, 241, 211); normalTextPaint.textSize = X(20f)
+        c.drawText("60-second Garden Trial", X(410f), Y(485f), normalTextPaint)
+        c.drawText("5 lanes · 9 tiles · 4 original defenders", X(410f), Y(520f), normalTextPaint)
+        panel(c, 775f, 190f, 1190f, 555f, Color.argb(190, 25, 70, 39))
+        textPaint.color = Color.rgb(255, 224, 111); textPaint.textSize = X(30f)
+        c.drawText("YOUR GARDEN", X(820f), Y(245f), textPaint)
+        PlantType.entries.forEachIndexed { i, p ->
+            drawPlantIcon(c, 845f, 305f + i*58f, p)
+            normalTextPaint.color = Color.WHITE; normalTextPaint.textSize = X(20f)
+            c.drawText(p.title, X(885f), Y(312f + i*58f), normalTextPaint)
+            normalTextPaint.color = Color.rgb(255, 221, 100)
+            c.drawText("☀ ${p.cost}", X(1055f), Y(312f + i*58f), normalTextPaint)
+        }
+    }
+
+    private fun drawModeSelect(c: Canvas) {
+        drawHome(c)
+        panel(c, 250f, 105f, 1030f, 620f)
+        title(c, "CHOOSE MODE", "Pick a mode for this build.")
+        button(c, 330f, 205f, 300f, 72f, "ADVENTURE")
+        button(c, 650f, 205f, 300f, 72f, "ARENA")
+        button(c, 330f, 305f, 300f, 72f, "CHALLENGE", false)
+        button(c, 650f, 305f, 300f, 72f, "ENDLESS", false)
+        button(c, 490f, 500f, 300f, 65f, "BACK")
+    }
+
+    private fun drawBattleScene(c: Canvas) {
+        drawBackground(c); drawTopBar(c); drawBoard(c); drawPlants(c); drawEnemies(c); drawBullets(c); drawParticles(c); drawPlantBar(c); drawFloatTexts(c)
+    }
+
+    private fun drawPause(c: Canvas) {
+        uiPaint.color = Color.argb(190, 5, 16, 10); c.drawRect(0f,0f,width.toFloat(),height.toFloat(),uiPaint)
+        panel(c, 410f, 145f, 870f, 565f)
+        textPaint.color = Color.WHITE; textPaint.textSize = X(48f); c.drawText("PAUSED", X(525f), Y(215f), textPaint)
+        button(c, 490f, 260f, 300f, 62f, "RESUME")
+        button(c, 490f, 340f, 300f, 62f, "RESTART")
+        button(c, 490f, 420f, 300f, 62f, "QUIT")
+    }
+
+    private fun drawResult(c: Canvas) {
+        uiPaint.color = Color.argb(210, 7, 20, 12); c.drawRect(0f,0f,width.toFloat(),height.toFloat(),uiPaint)
+        panel(c, 300f, 105f, 980f, 625f)
+        textPaint.color = if (victory) Color.rgb(255,224,105) else Color.rgb(255,130,120)
+        textPaint.textSize = X(50f)
+        c.drawText(if (victory) "GARDEN SECURED!" else "GARDEN FALLEN", X(425f), Y(190f), textPaint)
+        normalTextPaint.color = Color.WHITE; normalTextPaint.textSize = X(25f)
+        c.drawText("Score: $score", X(475f), Y(250f), normalTextPaint)
+        c.drawText("Crowns: $crowns", X(475f), Y(290f), normalTextPaint)
+        c.drawText("Survived: ${timeAlive.toInt()}s", X(475f), Y(330f), normalTextPaint)
+        button(c, 425f, 390f, 230f, 62f, "PLAY AGAIN")
+        button(c, 675f, 390f, 190f, 62f, "HOME")
+    }
+
+    private fun drawCollection(c: Canvas) {
+        drawHome(c); panel(c, 300f, 85f, 1000f, 650f)
+        title(c, "COLLECTION", "Your current defenders and threats.")
+        PlantType.entries.forEachIndexed { i,p ->
+            val x = 360f + (i%2)*300f; val y = 205f + (i/2)*180f
+            drawPlantIcon(c,x,y,p); textPaint.color=Color.WHITE; textPaint.textSize=X(23f)
+            c.drawText(p.title,X(x+45f),Y(y+5f),textPaint)
+            normalTextPaint.color=Color.rgb(205,225,203); normalTextPaint.textSize=X(17f)
+            c.drawText("Cost ${p.cost}",X(x+45f),Y(y+32f),normalTextPaint)
+        }
+        button(c, 540f, 570f, 220f, 58f, "BACK")
+    }
+
+    private fun drawSettings(c: Canvas) {
+        drawHome(c); panel(c, 300f, 85f, 1000f, 650f)
+        title(c, "SETTINGS", "Gameplay options are saved for this session.")
+        val labels=listOf("SFX","MUSIC","VIBRATION","HIGH GRAPHICS")
+        val values=listOf(sfxEnabled,musicEnabled,vibrationEnabled,highGraphics)
+        labels.forEachIndexed { i,l ->
+            val y=215f+i*72f
+            textPaint.color=Color.WHITE;textPaint.textSize=X(24f);c.drawText(l,X(390f),Y(y),textPaint)
+            button(c,700f,y-34f,190f,52f,if(values[i])"ON" else "OFF")
+        }
+        button(c, 540f, 535f, 220f, 58f, "BACK")
     }
 
     private fun drawBackground(c: Canvas) {
@@ -358,7 +488,7 @@ class GardenGameView(context: Context) : View(context) {
             val cx = cellCenterX(p.col); val cy = cellCenterY(p.row)
             uiPaint.color = Color.argb(75, 22, 54, 25)
             c.drawOval(X(cx - 27f), Y(cy + 25f), X(cx + 27f), Y(cy + 37f), uiPaint)
-            drawPlantIcon(c, cx, cy + (kotlin.math.sin(timeAlive * 2.3 + p.row + p.col) * 3.0).toFloat(), p.type)
+            drawPlantIcon(c, cx, cy + kotlin.math.sin(timeAlive * 2.3 + p.row + p.col).toFloat() * 3f, p.type)
             uiPaint.color = Color.argb(180, 20, 45, 23)
             c.drawRoundRect(X(cx - 28f), Y(cy - 38f), X(cx + 28f), Y(cy - 31f), X(4f), X(4f), uiPaint)
             uiPaint.color = Color.rgb(104, 221, 119)
@@ -371,7 +501,7 @@ class GardenGameView(context: Context) : View(context) {
             val y = cellCenterY(e.row) + kotlin.math.sin(e.bob) * 3f
             uiPaint.color = Color.argb(70, 22, 40, 20)
             c.drawOval(X(e.x - 28f), Y(y + 26f), X(e.x + 28f), Y(y + 38f), uiPaint)
-            if (e.type == 0) drawBasicEnemy(c, e.x, y) else drawBruteEnemy(c, e.x, y)
+            when (e.type) { 0 -> drawBasicEnemy(c, e.x, y); 1 -> drawBruteEnemy(c, e.x, y); else -> drawRunnerEnemy(c, e.x, y) }
             uiPaint.color = Color.argb(180, 20, 45, 23)
             c.drawRoundRect(X(e.x - 30f), Y(y - 42f), X(e.x + 30f), Y(y - 35f), X(3f), X(3f), uiPaint)
             uiPaint.color = Color.rgb(228, 100, 90)
@@ -394,6 +524,13 @@ class GardenGameView(context: Context) : View(context) {
         uiPaint.color = Color.rgb(74, 57, 44); c.drawRoundRect(X(x - 12f), Y(y + 6f), X(x + 12f), Y(y + 12f), X(2f), X(2f), uiPaint)
         uiPaint.color = Color.rgb(65, 54, 46); c.drawRect(X(x - 24f), Y(y + 23f), X(x - 7f), Y(y + 48f), uiPaint); c.drawRect(X(x + 7f), Y(y + 23f), X(x + 24f), Y(y + 48f), uiPaint)
         uiPaint.color = Color.rgb(195, 196, 205); c.drawRoundRect(X(x - 34f), Y(y - 28f), X(x - 20f), Y(y - 5f), X(4f), X(4f), uiPaint)
+    }
+
+    private fun drawRunnerEnemy(c: Canvas, x: Float, y: Float) {
+        uiPaint.color = Color.rgb(171, 72, 132); c.drawOval(X(x-20f),Y(y-28f),X(x+20f),Y(y+25f),uiPaint)
+        uiPaint.color = Color.rgb(242, 181, 211); c.drawOval(X(x-14f),Y(y-17f),X(x+14f),Y(y+16f),uiPaint)
+        uiPaint.color = Color.rgb(55,25,50); c.drawCircle(X(x-6f),Y(y-5f),X(3f),uiPaint); c.drawCircle(X(x+7f),Y(y-5f),X(3f),uiPaint)
+        uiPaint.color = Color.rgb(76,45,70); c.drawRect(X(x-17f),Y(y+20f),X(x-4f),Y(y+38f),uiPaint); c.drawRect(X(x+4f),Y(y+20f),X(x+17f),Y(y+38f),uiPaint)
     }
 
     private fun drawBullets(c: Canvas) {
@@ -442,31 +579,65 @@ class GardenGameView(context: Context) : View(context) {
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action != MotionEvent.ACTION_UP) return true
         val x = event.x / sx(); val y = event.y / sy()
-        if (gameOver) {
-            if (x in 492f..788f && y in 392f..465f) resetGame()
-            return true
-        }
-        if (y in 120f..216f) {
-            val index = ((x - 26f) / 148f).toInt()
-            if (index in PlantType.entries.indices) selected = PlantType.entries[index]
-            return true
-        }
-        val col = ((x - 230f) / 93f).toInt()
-        val row = ((y - 150f) / 82f).toInt()
-        if (col !in 0 until cols || row !in 0 until rows) return true
-        if (plants.any { it.row == row && it.col == col }) return true
-        if (suns >= selected.cost) {
-            suns -= selected.cost
-            val hp = if (selected == PlantType.WALL_BUD) 180f else 100f
-            plants += Plant(row, col, selected, hp)
-            sparkle(row, col, selected.accent)
+        when (screen) {
+            Screen.HOME -> {
+                when {
+                    x in 80f..380f && y in 195f..263f -> screen = Screen.MODE_SELECT
+                    x in 80f..380f && y in 285f..353f -> screen = Screen.COLLECTION
+                    x in 80f..380f && y in 375f..443f -> screen = Screen.COLLECTION
+                    x in 80f..380f && y in 465f..533f -> screen = Screen.SETTINGS
+                    x in 410f..710f && y in 195f..263f -> { selectedMode="ARENA"; resetGame(); screen=Screen.BATTLE }
+                }
+            }
+            Screen.MODE_SELECT -> {
+                when {
+                    x in 330f..630f && y in 205f..277f -> { selectedMode="ADVENTURE"; resetGame(); screen=Screen.BATTLE }
+                    x in 650f..950f && y in 205f..277f -> { selectedMode="ARENA"; resetGame(); screen=Screen.BATTLE }
+                    x in 490f..790f && y in 500f..565f -> screen=Screen.HOME
+                }
+            }
+            Screen.BATTLE -> {
+                if (x > 1120f && y < 110f) { screen=Screen.PAUSE; return true }
+                if (y in 120f..216f) {
+                    val index=((x-26f)/148f).toInt()
+                    if(index in PlantType.entries.indices) selected=PlantType.entries[index]
+                    return true
+                }
+                val col=((x-230f)/93f).toInt(); val row=((y-150f)/82f).toInt()
+                if(col !in 0 until cols || row !in 0 until rows) return true
+                if(plants.any{it.row==row&&it.col==col}) return true
+                if(suns>=selected.cost){ suns-=selected.cost; val hp=if(selected==PlantType.WALL_BUD)180f else 100f; plants+=Plant(row,col,selected,hp); sparkle(row,col,selected.accent) }
+            }
+            Screen.PAUSE -> {
+                when {
+                    x in 490f..790f && y in 260f..322f -> screen=Screen.BATTLE
+                    x in 490f..790f && y in 340f..402f -> { resetGame(); screen=Screen.BATTLE }
+                    x in 490f..790f && y in 420f..482f -> screen=Screen.HOME
+                }
+            }
+            Screen.RESULT -> {
+                when {
+                    x in 425f..655f && y in 390f..452f -> { resetGame(); screen=Screen.BATTLE }
+                    x in 675f..865f && y in 390f..452f -> screen=Screen.HOME
+                }
+            }
+            Screen.COLLECTION -> if (x in 540f..760f && y in 570f..628f) screen=Screen.HOME
+            Screen.SETTINGS -> {
+                when {
+                    x in 700f..890f && y in 181f..233f -> sfxEnabled=!sfxEnabled
+                    x in 700f..890f && y in 253f..305f -> musicEnabled=!musicEnabled
+                    x in 700f..890f && y in 325f..377f -> vibrationEnabled=!vibrationEnabled
+                    x in 700f..890f && y in 397f..449f -> highGraphics=!highGraphics
+                    x in 540f..760f && y in 535f..593f -> screen=Screen.HOME
+                }
+            }
         }
         return true
     }
 
     private fun resetGame() {
         plants.clear(); enemies.clear(); bullets.clear(); particles.clear(); floatTexts.clear()
-        timeAlive = 0f; spawnTimer = 0f; score = 0; crowns = 0; suns = 250; lives = 3; selected = PlantType.PEA_POD; gameOver = false
+        timeAlive = 0f; spawnTimer = 0f; score = 0; crowns = 0; suns = 250; lives = 3; selected = PlantType.PEA_POD; gameOver = false; victory = false
         lastNs = System.nanoTime()
     }
 }
